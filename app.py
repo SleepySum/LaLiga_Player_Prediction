@@ -8,9 +8,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 from sklearn.ensemble import HistGradientBoostingRegressor
 
-# ---------------------------------------------------------
-# Page Configuration
-# ---------------------------------------------------------
 st.set_page_config(
     page_title="LaLiga Player Market Value Predictor",
     page_icon="⚽",
@@ -18,11 +15,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ---------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------
 def clean_text(s: str) -> str:
-    """Normalize text by resolving mojibake (e.g. GÃ¼ler) and normalizing accents (Güler -> Guler)."""
     if not isinstance(s, str):
         return s
     try:
@@ -30,11 +23,9 @@ def clean_text(s: str) -> str:
             s = s.encode("latin1").decode("utf-8")
     except Exception:
         pass
-    # Normalize unicode to clean standard ASCII (removes combining diacritics)
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
 def format_currency(val: float) -> str:
-    """Format numeric values into readable European currency strings."""
     if pd.isna(val) or val is None:
         return "N/A"
     if val >= 1_000_000_000:
@@ -45,12 +36,8 @@ def format_currency(val: float) -> str:
         return f"€{val / 1e3:.0f}K"
     return f"€{val:.0f}"
 
-# ---------------------------------------------------------
-# Data & Model Pipeline
-# ---------------------------------------------------------
 @st.cache_resource
 def load_all_resources():
-    """Load dataset, clean names and diacritics, run feature engineering, and train/load the GBDT model."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "laliga_transfer_model.pkl")
     csv_path = os.path.join(base_dir, "Data_LaLiga_2024_25.csv")
@@ -64,18 +51,15 @@ def load_all_resources():
     except Exception:
         df = pd.read_csv(csv_path, encoding="latin1")
 
-    # Clean text columns to avoid mojibake like 'Arda GÃ¼ler' -> 'Arda Guler'
     for col in ["Player", "Team", "Nation", "Position"]:
         if col in df.columns:
             df[col] = df[col].apply(clean_text)
 
-    # Clean European decimal formatting (commas -> dots)
     float_cols = ["xG", "xAG", "Gls/90", "Ast/90", "xG/90", "xAG/90"]
     for col in float_cols:
         if col in df.columns:
             df[col] = df[col].astype(str).str.replace(",", ".").astype(float).fillna(0.0)
 
-    # Feature Engineering
     df["Age_Sq"] = df["Age"] ** 2
     tier_1 = ["Real Madrid", "Barcelona", "Atletico Madrid"]
     tier_2 = ["Real Sociedad", "Athletic Club", "Villarreal", "Betis", "Girona"]
@@ -88,11 +72,8 @@ def load_all_resources():
         return 3
 
     df["Club_Tier"] = df["Team"].apply(get_tier)
-
-    # One-hot encode position
     df_encoded = pd.get_dummies(df, columns=["Position"], drop_first=True)
 
-    # Target Valuation Formula
     np.random.seed(42)
     base_val = (
         (38 - df["Age"]).clip(lower=0) * 1.8e6
@@ -137,19 +118,13 @@ def load_all_resources():
         model.fit(X, y)
         joblib.dump(model, model_path)
 
-    # Generate predictions across the full dataset
     predicted_log = model.predict(X)
     df["Predicted_Value_EUR"] = np.maximum(np.expm1(predicted_log), 250_000)
 
     return model, df, feature_cols
 
-
-# Load resources
 model, df, feature_cols = load_all_resources()
 
-# ---------------------------------------------------------
-# Sidebar Navigation (Model Summary Removed)
-# ---------------------------------------------------------
 with st.sidebar:
     st.markdown("## ⚽ LaLiga Valuation AI")
     st.caption("2024 / 2025 Season Market Value Model")
@@ -167,9 +142,6 @@ with st.sidebar:
     st.markdown("---")
     st.caption("LaLiga Santander 2024–25 Market Value Estimator")
 
-# ---------------------------------------------------------
-# VIEW 1: PLAYER EXPLORER
-# ---------------------------------------------------------
 if menu == "🔍 Player Explorer":
     st.title("🔍 La Liga Player Valuation Explorer")
     st.markdown("Search or filter any player from the 2024–25 season to evaluate their predicted transfer market value.")
@@ -184,7 +156,6 @@ if menu == "🔍 Player Explorer":
         pos_list = ["All Positions"] + sorted(df["Position"].unique().tolist())
         selected_pos = st.selectbox("Filter by Position", pos_list)
 
-    # Filter dataframe
     filtered_df = df.copy()
     if selected_team != "All Clubs":
         filtered_df = filtered_df[filtered_df["Team"] == selected_team]
@@ -197,17 +168,14 @@ if menu == "🔍 Player Explorer":
             st.warning("No players found with current filters.")
             st.stop()
         
-        # Default to Arda Guler if available to highlight the fix, else first player
         default_index = player_names.index("Arda Guler") if "Arda Guler" in player_names else 0
         selected_player_name = st.selectbox("Select Player", player_names, index=default_index)
 
-    # Get player record
     player = df[df["Player"] == selected_player_name].iloc[0]
     percentile = (df["Predicted_Value_EUR"] < player["Predicted_Value_EUR"]).mean() * 100
 
     st.markdown("---")
 
-    # Main Profile Card
     profile_col, stats_col = st.columns([1.5, 2.5])
 
     with profile_col:
@@ -247,7 +215,6 @@ if menu == "🔍 Player Explorer":
 
     st.markdown("---")
 
-    # Comparison Bar Chart against Positional Average
     st.subheader(f"📊 {player['Player']} vs. La Liga {player['Position']} Average")
     pos_avg = df[df["Position"] == player["Position"]].mean(numeric_only=True)
 
@@ -280,9 +247,6 @@ if menu == "🔍 Player Explorer":
     )
     st.plotly_chart(fig, use_container_width=True)
 
-# ---------------------------------------------------------
-# VIEW 2: SCOUT SIMULATOR
-# ---------------------------------------------------------
 elif menu == "🎛️ Scout Simulator":
     st.title("🎛️ Custom Player Valuation Simulator")
     st.markdown("Simulate a custom or prospective player's market value based on attributes and season performance.")
@@ -312,7 +276,6 @@ elif menu == "🎛️ Scout Simulator":
 
         submitted = st.form_submit_button("🔮 Calculate Predicted Valuation", use_container_width=True)
 
-    # Compute values
     n90 = max(sim_minutes / 90.0, 0.1)
     sim_gls_90 = sim_goals / n90
     sim_ast_90 = sim_assists / n90
@@ -323,7 +286,6 @@ elif menu == "🎛️ Scout Simulator":
     tier_2 = ["Real Sociedad", "Athletic Club", "Villarreal", "Betis", "Girona"]
     sim_tier = 1 if sim_club in tier_1 else (2 if sim_club in tier_2 else 3)
 
-    # Build feature row matching model training columns
     sim_data = {
         "Age": [sim_age],
         "Age_Sq": [sim_age ** 2],
@@ -366,7 +328,6 @@ elif menu == "🎛️ Scout Simulator":
         sim_percentile = (df["Predicted_Value_EUR"] < predicted_val).mean() * 100
         st.info(f"💡 This valuation places the prospect in the **Top {100 - sim_percentile:.1f}%** of all players in La Liga.")
 
-    # Show comparable players
     st.markdown("#### 👥 Most Comparable Current La Liga Players")
     df["val_diff"] = (df["Predicted_Value_EUR"] - predicted_val).abs()
     similar_players = (
@@ -381,9 +342,6 @@ elif menu == "🎛️ Scout Simulator":
         use_container_width=True,
     )
 
-# ---------------------------------------------------------
-# VIEW 3: LEAGUE INSIGHTS
-# ---------------------------------------------------------
 elif menu == "📊 League Insights":
     st.title("📊 La Liga 2024–25 Market Overview")
     st.markdown("Aggregate valuation trends, team rankings, and position benchmarks across the league.")
