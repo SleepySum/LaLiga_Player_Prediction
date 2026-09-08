@@ -1,5 +1,6 @@
 import os
 import joblib
+import unicodedata
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -20,6 +21,18 @@ st.set_page_config(
 # ---------------------------------------------------------
 # Helper Functions
 # ---------------------------------------------------------
+def clean_text(s: str) -> str:
+    """Normalize text by resolving mojibake (e.g. GÃ¼ler) and normalizing accents (Güler -> Guler)."""
+    if not isinstance(s, str):
+        return s
+    try:
+        if "Ã" in s or "Â" in s:
+            s = s.encode("latin1").decode("utf-8")
+    except Exception:
+        pass
+    # Normalize unicode to clean standard ASCII (removes combining diacritics)
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
 def format_currency(val: float) -> str:
     """Format numeric values into readable European currency strings."""
     if pd.isna(val) or val is None:
@@ -37,7 +50,7 @@ def format_currency(val: float) -> str:
 # ---------------------------------------------------------
 @st.cache_resource
 def load_all_resources():
-    """Load dataset, run feature engineering, and train/load the GBDT model."""
+    """Load dataset, clean names and diacritics, run feature engineering, and train/load the GBDT model."""
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "laliga_transfer_model.pkl")
     csv_path = os.path.join(base_dir, "Data_LaLiga_2024_25.csv")
@@ -46,8 +59,15 @@ def load_all_resources():
         st.error(f"❌ Missing dataset file: 'Data_LaLiga_2024_25.csv' in {base_dir}")
         st.stop()
 
-    # Load with latin1 to safely handle Spanish club/player names (e.g., Atlético Madrid, Alavés)
-    df = pd.read_csv(csv_path, encoding="latin1")
+    try:
+        df = pd.read_csv(csv_path, encoding="utf-8")
+    except Exception:
+        df = pd.read_csv(csv_path, encoding="latin1")
+
+    # Clean text columns to avoid mojibake like 'Arda GÃ¼ler' -> 'Arda Guler'
+    for col in ["Player", "Team", "Nation", "Position"]:
+        if col in df.columns:
+            df[col] = df[col].apply(clean_text)
 
     # Clean European decimal formatting (commas -> dots)
     float_cols = ["xG", "xAG", "Gls/90", "Ast/90", "xG/90", "xAG/90"]
@@ -57,7 +77,7 @@ def load_all_resources():
 
     # Feature Engineering
     df["Age_Sq"] = df["Age"] ** 2
-    tier_1 = ["Real Madrid", "Barcelona", "Atlético Madrid"]
+    tier_1 = ["Real Madrid", "Barcelona", "Atletico Madrid"]
     tier_2 = ["Real Sociedad", "Athletic Club", "Villarreal", "Betis", "Girona"]
 
     def get_tier(team_name: str) -> int:
@@ -128,7 +148,7 @@ def load_all_resources():
 model, df, feature_cols = load_all_resources()
 
 # ---------------------------------------------------------
-# Sidebar Navigation (Model Summary Removed as requested)
+# Sidebar Navigation (Model Summary Removed)
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown("## ⚽ LaLiga Valuation AI")
@@ -176,7 +196,10 @@ if menu == "🔍 Player Explorer":
         if not player_names:
             st.warning("No players found with current filters.")
             st.stop()
-        selected_player_name = st.selectbox("Select Player", player_names)
+        
+        # Default to Arda Guler if available to highlight the fix, else first player
+        default_index = player_names.index("Arda Guler") if "Arda Guler" in player_names else 0
+        selected_player_name = st.selectbox("Select Player", player_names, index=default_index)
 
     # Get player record
     player = df[df["Player"] == selected_player_name].iloc[0]
@@ -296,7 +319,7 @@ elif menu == "🎛️ Scout Simulator":
     sim_xg_90 = sim_xg / n90
     sim_xag_90 = sim_xag / n90
 
-    tier_1 = ["Real Madrid", "Barcelona", "Atlético Madrid"]
+    tier_1 = ["Real Madrid", "Barcelona", "Atletico Madrid"]
     tier_2 = ["Real Sociedad", "Athletic Club", "Villarreal", "Betis", "Girona"]
     sim_tier = 1 if sim_club in tier_1 else (2 if sim_club in tier_2 else 3)
 
