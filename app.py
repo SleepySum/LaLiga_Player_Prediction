@@ -15,6 +15,51 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+def inject_vercel_analytics():
+    """Inject Vercel Web Analytics and Speed Insights scripts into the page."""
+    analytics_html = """
+    <script>
+        // Function to inject scripts into parent document
+        (function() {
+            // Access parent document
+            var parentDoc = window.parent.document;
+            
+            // Check if scripts are already injected
+            if (parentDoc.getElementById('vercel-analytics-init')) {
+                return;
+            }
+            
+            // Create analytics initialization script
+            var analyticsInit = parentDoc.createElement('script');
+            analyticsInit.id = 'vercel-analytics-init';
+            analyticsInit.innerHTML = 'window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };';
+            parentDoc.head.appendChild(analyticsInit);
+            
+            // Create analytics script loader
+            var analyticsScript = parentDoc.createElement('script');
+            analyticsScript.defer = true;
+            analyticsScript.src = '/_vercel/insights/script.js';
+            parentDoc.head.appendChild(analyticsScript);
+            
+            // Create speed insights initialization script
+            var speedInit = parentDoc.createElement('script');
+            speedInit.id = 'vercel-speed-insights-init';
+            speedInit.innerHTML = 'window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };';
+            parentDoc.head.appendChild(speedInit);
+            
+            // Create speed insights script loader
+            var speedScript = parentDoc.createElement('script');
+            speedScript.defer = true;
+            speedScript.src = '/_vercel/speed-insights/script.js';
+            parentDoc.head.appendChild(speedScript);
+        })();
+    </script>
+    """
+    st.components.html(analytics_html, height=0, width=0)
+
+# Inject Vercel Analytics
+inject_vercel_analytics()
+
 def clean_text(s: str) -> str:
     if not isinstance(s, str):
         return s
